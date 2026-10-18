@@ -1,10 +1,10 @@
-# RDD2022 India Road Damage Analysis 
+# RDD2022 India Road Damage Analysis — Reproducible Big Data Project
 
 ## 1. Project overview
 
 This project analyses road-damage annotations from the **India portion of the RDD2022 dataset** using Apache Hadoop HDFS and Apache Spark. XML annotations are converted into image-level features, then analysed with KMeans clustering and FP-Growth association-rule mining. Local Python scripts create plots and annotated grids of representative images.
 
-This is an **annotation-based exploratory big-data analysis**, not a trained road-damage detection model. KMeans groups images using engineered numerical features. The bounding boxes shown in representative-image figures come from the original XML ground-truth annotations; they are not predictions made by KMeans.
+This is an **annotation-based exploratory big-data analysis**, not a trained road-damage detection model. KMeans groups images using engineered numerical features. The bounding boxes shown in the representative-image figures come from the original XML ground-truth annotations; they are not predictions made by KMeans.
 
 ### Objectives
 
@@ -18,24 +18,20 @@ This is an **annotation-based exploratory big-data analysis**, not a trained roa
 
 ## 2. Technologies and environment
 
-The following versions were recorded for the development environment. Confirm them on the machine used for reproduction; these values are not a guarantee that every installation has the same versions.
-
-| Component | Reported version / environment | Purpose |
+| Component | Version / environment | Purpose |
 |---|---|---|
 | Operating system | Ubuntu under WSL on Windows | Development environment |
 | Hadoop | 3.3.6 | HDFS storage |
 | Apache Spark / PySpark | 3.5.9 | Distributed ETL, KMeans, and FP-Growth |
-| Java | OpenJDK 17 (WSL setup used for the recent run) | JVM runtime |
+| Java | OpenJDK 17 | JVM runtime |
 | Python | 3.10.12 | PySpark scripts and local analysis |
-| pandas | Used by local analysis scripts | CSV handling |
-| matplotlib | Used by local analysis scripts | Plots and grids |
-| Pillow | Used by representative-image script | Image loading and annotation |
+| pandas | see `requirements.txt` | CSV handling |
+| matplotlib | see `requirements.txt` | Plots and grids |
+| Pillow | see `requirements.txt` | Image loading and annotation |
 | Dataset annotations | XML | Damage classes and bounding boxes |
 | Feature and intermediate outputs | Parquet on HDFS | Structured analysis data |
 
 ### Check the environment
-
-Run these commands in the Linux/WSL terminal:
 
 ```bash
 java -version
@@ -45,11 +41,11 @@ spark-submit --version
 jps
 ```
 
-When HDFS is running, `jps` should normally show the NameNode and DataNode processes; a SecondaryNameNode may also appear depending on the configuration.
+When HDFS is running, `jps` shows the NameNode and DataNode processes (a SecondaryNameNode may also appear).
 
-### Python virtual environment and dependencies
+### Python virtual environment
 
-The recent WSL setup used Python 3.10.12 and a project-local virtual environment named `.venv`. From the repository root:
+From the repository root:
 
 ```bash
 cd ~/projects/RDD2022_BigData_Project
@@ -59,30 +55,21 @@ source .venv/bin/activate
 
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m pip check
-python -m compileall -q scripts
 ```
 
-The recorded checks completed successfully. `pip check` verifies installed package requirements, while `compileall` checks Python syntax; neither one proves that every Spark job will run successfully.
-
-If `requirements.txt` does not include a package imported by a local plotting/image script, add that dependency to the requirements file rather than relying on an undeclared local installation. The project also needs separately installed and configured Hadoop and Spark; creating `.venv` does not install them.
-
-For the recent WSL environment, Java was available at `/usr/lib/jvm/java-17-openjdk-amd64`. Use the path that exists on your machine:
+### Java
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH="$JAVA_HOME/bin:$PATH"
 java -version
-spark-submit --version
 ```
-
-The recent environment used Hadoop 3.3.6, Spark 3.5.9, Java 17, and Python 3.10.12. These are the versions to use as the reproduction baseline for this run, rather than the older versions previously listed in this README.
 
 ## 3. Dataset setup
 
-The project uses the **India portion of RDD2022**, specifically the training images and their XML annotations. The raw dataset is not included in this repository. Obtain it from the official RDD2022 distribution or the dataset source provided by your course or supervisor, and follow the applicable dataset licence and access conditions.
+The project uses the **India portion of RDD2022**: the training images and their XML annotations. The raw dataset is not included in this repository and is available from the official RDD2022 distribution.
 
-The original development environment used directories equivalent to:
+Directory layout used during development:
 
 ```text
 RDD2022_India/
@@ -93,68 +80,45 @@ RDD2022_India/
             └── xmls/
 ```
 
-These are example directory names, not paths that will automatically exist on another computer. Keep the image files and their corresponding XML files together in the expected structure.
+### Download and extract
 
-### Download and extract the released dataset
-
-The archive used in the recent WSL run was the full RDD2022 release archive:
-
-```text
-RDD2022_released_through_CRDDC2022.zip
-```
-
-It was downloaded from the RDD2022 release hosted on Figshare. The full archive is large (approximately 12.35 GB before extraction). Keep it outside the Git repository; do not commit the archive or the extracted image dataset.
-
-The downloaded archive was stored under `~/datasets`. After downloading it, the India country archive was extracted from the outer archive:
+The full release archive `RDD2022_released_through_CRDDC2022.zip` (about 12.35 GB) was downloaded from Figshare and stored in `~/datasets`. The nested India archive was then extracted from it:
 
 ```bash
 mkdir -p ~/datasets
 cd ~/datasets
 
-# Check that the India archive is present inside the full release.
+# Confirm the India archive is inside the full release
 unzip -Z1 RDD2022_released_through_CRDDC2022.zip | grep 'RDD2022/India.zip'
 
-# Extract only the nested India archive.
-unzip -o RDD2022_released_through_CRDDC2022.zip \\
+# Extract only the nested India archive
+unzip -o RDD2022_released_through_CRDDC2022.zip \
   'RDD2022/India.zip' -d ~/datasets
 ```
 
-The nested archive contains training images and XML annotations, including paths such as `India/train/annotations/xmls/India_000000.xml`. In the recent run, only the training XML annotations were extracted for the HDFS feature-extraction stage:
+Only the training XML annotations are needed for the HDFS feature-extraction stage:
 
 ```bash
-unzip -Z1 ~/datasets/RDD2022/India.zip | grep -m 10 -E '\\.xml$'
-
 mkdir -p ~/datasets/India_annotations
-unzip -o ~/datasets/RDD2022/India.zip \\
-  'India/train/annotations/xmls/*.xml' \\
+unzip -o ~/datasets/RDD2022/India.zip \
+  'India/train/annotations/xmls/*.xml' \
   -d ~/datasets/India_annotations
-```
 
-Count local XML files before uploading them:
-
-```bash
-find ~/datasets/India_annotations/India/train/annotations/xmls \\
+find ~/datasets/India_annotations/India/train/annotations/xmls \
   -maxdepth 1 -type f -name '*.xml' | wc -l
 ```
 
-The exact source and extraction paths may differ if you choose another download location. This extraction step does **not** extract the corresponding JPEG images. The representative-image stages need those images locally, so extract the image directory as well if you intend to regenerate representative-image grids.
+The representative-image stages also need the JPEG images locally, so extract `India/train/images/` from the same archive if you want to regenerate the image grids.
 
-### Configure local paths before running
+### Local paths
 
-The representative-image scripts in the current project version contain absolute paths from the original WSL machine. Before running them on another computer, update the path constants near the top of:
+`scripts/stage3d_representatives.py` and `scripts/stage3e_cluster_image_grid.py` contain absolute paths from the original WSL machine. Update the path constants near the top of each file (project output directory, image directory, XML directory) to match your setup.
 
-- `scripts/stage3d_representatives.py`
-- `scripts/stage3e_cluster_image_grid.py`
+The feature-extraction script reads XML files from HDFS, not from the local XML directory (see Section 6).
 
-Set the project output directory, image directory, and XML directory to the correct local locations. The CSV generated by the representative-image script also records local image paths; regenerate it after changing machines.
+### Feature-data counts
 
-The feature-extraction script reads XML files from HDFS rather than directly from the local XML directory. The HDFS setup is described in Section 6.
-
-### Reported feature-data counts
-
-The previous project run reported these counts:
-
-| Measure | Reported count |
+| Measure | Count |
 |---|---:|
 | Feature rows / images represented | 7,706 |
 | Images with at least one annotated damage instance | 3,223 |
@@ -162,11 +126,7 @@ The previous project run reported these counts:
 | Annotated damage instances | 6,831 |
 | Images containing more than one damage class | 1,049 |
 
-The first three values describe rows in the generated feature dataset. The damage-instance and multi-class values were reported by earlier validation. Recheck the counts after rebuilding the dataset; they are reported results, not guarantees for a new run.
-
 ## 4. Repository structure
-
-The intended Git repository contains source code, documentation, and selected final analysis artifacts:
 
 ```text
 RDD2022_BigData_Project/
@@ -194,23 +154,19 @@ RDD2022_BigData_Project/
         └── k15_representative_boxes_part*.png
 ```
 
-This is the intended cleaned repository structure. Keep only files that actually exist and that you intend to commit. The raw images and XML annotations, local Derby metastore, runtime logs, Python bytecode, Hadoop checksum files, and regenerable intermediate Parquet directories should not be committed.
-
 ### Script responsibilities
 
 | Script | Responsibility |
 |---|---|
 | `scripts/rdd2022_person1.py` | Reads XML annotations from HDFS, extracts image-level features, and writes a Parquet dataset to HDFS. |
-| `scripts/rdd2022_person2.py` | Performs the earlier feature-data validation and displays the output schema and sample rows. |
+| `scripts/rdd2022_person2.py` | Validates the feature data and displays the output schema and sample rows. |
 | `scripts/stage3a_kmeans.py` | Standardises selected features, evaluates K=2–15, and writes metrics, cluster assignments, and summaries to HDFS. |
 | `scripts/stage3b_fpgrowth.py` | Builds damage-class transactions from damage-bearing images and writes frequent itemsets and association rules to HDFS. |
 | `scripts/stage3c_visualize.py` | Generates local KMeans plots from CSV files in `results/final_analysis/`. |
-| `scripts/stage3d_representatives.py` | Selects two high-`severity_score` representative candidates per cluster and checks whether local images exist. |
+| `scripts/stage3d_representatives.py` | Selects two high-`severity_score` representative candidates per cluster and checks that the local images exist. |
 | `scripts/stage3e_cluster_image_grid.py` | Creates representative-image grids using the original XML ground-truth bounding boxes. |
 
 ## 5. HDFS layout
-
-The scripts use the following HDFS paths on the local Hadoop cluster.
 
 ### Feature data
 
@@ -219,7 +175,7 @@ The scripts use the following HDFS paths on the local Hadoop cluster.
 /rdd2022/india/features/india_features.parquet
 ```
 
-The corresponding feature URI in the scripts is:
+Feature URI used in the scripts:
 
 ```text
 hdfs://localhost:9000/rdd2022/india/features/india_features.parquet
@@ -243,36 +199,32 @@ hdfs://localhost:9000/rdd2022/india/features/india_features.parquet
 └── association_rules_csv/
 ```
 
-These Parquet and CSV output directories are generated by running the scripts. They are not guaranteed to exist in a fresh clone. Older experiment directories may exist in a development HDFS installation, but they are not required as committed repository files.
+These directories are generated by running the scripts and do not exist in a fresh clone.
 
 ## 6. Reproducing the workflow
 
-Run the commands from the cloned project root. Replace `/path/to/RDD2022_BigData_Project` with the actual location of your clone:
+Run all commands from the project root:
 
 ```bash
 cd /path/to/RDD2022_BigData_Project
 ```
 
-Before running the workflow, configure the local dataset paths in the representative-image scripts as described in Section 3. Also inspect the input and output paths in the scripts if your HDFS NameNode address or port differs from `localhost:9000`.
+Before starting, set the local dataset paths in the representative-image scripts (Section 3). If your NameNode address or port differs from `localhost:9000`, update it in the scripts as well.
 
 ### Step 1 — Start and verify HDFS
-
-Check whether Hadoop is already running:
 
 ```bash
 jps
 hdfs dfs -ls /
 ```
 
-If the NameNode and DataNode are not running, start HDFS using the configured installation:
+If the NameNode and DataNode are not running:
 
 ```bash
 start-dfs.sh
 jps
 hdfs dfs -ls /
 ```
-
-Do not start duplicate services if HDFS is already running. If startup fails, resolve the local Hadoop configuration problem before continuing.
 
 ### Step 2 — Create the HDFS directories
 
@@ -284,82 +236,47 @@ hdfs dfs -mkdir -p /rdd2022/india/results
 
 ### Step 3 — Upload XML annotations to HDFS
 
-The current `scripts/rdd2022_person1.py` expects XML files directly under `/rdd2022/india/annotations/` and reads them using the pattern `annotations/*.xml`.
-
-Upload the XML files from your local annotation directory. Replace the local placeholder with the actual path on your machine:
+`scripts/rdd2022_person1.py` reads `/rdd2022/india/annotations/*.xml`, so the XML files must sit directly in that directory.
 
 ```bash
-hdfs dfs -put \\
-  ~/datasets/India_annotations/India/train/annotations/xmls/*.xml \\
+hdfs dfs -put \
+  ~/datasets/India_annotations/India/train/annotations/xmls/*.xml \
   /rdd2022/india/annotations/
-```
 
-For this project, the feature extraction script reads the XML files directly from `/rdd2022/india/annotations/*.xml`; the XML files should be directly inside that HDFS directory, not nested several directories deep.
-
-Count the HDFS files and inspect the destination after upload:
-
-```bash
 hdfs dfs -count /rdd2022/india/annotations
 hdfs dfs -ls /rdd2022/india/annotations | head
 ```
 
-During the recent upload, an intermediate count showed 502 files while the upload was still in progress. That was only a snapshot, not the final dataset count. Always verify the count after the upload has finished.
-
-If the HDFS destination already contains files with the same names, `hdfs dfs -put` may fail rather than overwrite them. Inspect the destination first and deliberately remove or replace old input files only if appropriate.
-
-Verify that the XML files are present:
-
-```bash
-hdfs dfs -ls /rdd2022/india/annotations
-```
-
-The HDFS input location must match the `XML_PATH` configured in `scripts/rdd2022_person1.py`.
+`hdfs dfs -put` fails on files that already exist in the destination. The HDFS input location must match `XML_PATH` in `scripts/rdd2022_person1.py`.
 
 ### Step 4 — Extract image-level features
 
-Check Python syntax, then run the feature extraction stage:
-
 ```bash
-python3 -m py_compile scripts/rdd2022_person1.py
 spark-submit scripts/rdd2022_person1.py
 ```
 
-The script reads XML files from HDFS and writes the feature dataset to:
-
-```text
-/rdd2022/india/features/india_features.parquet
-```
-
-Verify that the output exists:
+Output: `/rdd2022/india/features/india_features.parquet`
 
 ```bash
 hdfs dfs -ls /rdd2022/india/features
 hdfs dfs -du -h /rdd2022/india/features/india_features.parquet
 ```
 
-If the stage fails, verify that HDFS is running, the XML files are present at the configured input path, the files are valid, and the Spark/Hadoop configuration can access HDFS.
-
-### Step 5 — Run the earlier feature validation
+### Step 5 — Validate the feature data
 
 ```bash
-python3 -m py_compile scripts/rdd2022_person2.py
 spark-submit scripts/rdd2022_person2.py
 ```
 
-This stage reads the feature Parquet and prints basic row, column, and schema information. It is an earlier validation stage; the revised KMeans and FP-Growth analyses are implemented in the dedicated `stage3a` and `stage3b` scripts.
+This prints basic row, column, and schema information for the feature Parquet.
 
-### Step 6 — Run KMeans validation
+### Step 6 — Run KMeans
 
 ```bash
-python3 -m py_compile scripts/stage3a_kmeans.py
 spark-submit scripts/stage3a_kmeans.py
 ```
 
-The script reads the feature Parquet, keeps images with at least one annotated damage instance, removes rows with missing selected features, standardises the feature vector, evaluates K from 2 through 15, and writes its outputs under:
-
-```text
-/rdd2022/india/results/kmeans_validation/
-```
+The script reads the feature Parquet, keeps images with at least one annotated damage instance, drops rows with missing selected features, standardises the feature vector, evaluates K=2–15, and writes its outputs to `/rdd2022/india/results/kmeans_validation/`.
 
 The nine clustering features are:
 
@@ -375,149 +292,64 @@ area_ratio_D40
 damage_class_count
 ```
 
-`severity_score` is not part of the KMeans feature vector. The representative-image stage uses it to rank candidate images within each cluster.
-
-Inspect the output directories:
+`severity_score` is not part of the KMeans feature vector; it is used later to rank candidate images within each cluster.
 
 ```bash
 hdfs dfs -ls /rdd2022/india/results/kmeans_validation
-hdfs dfs -ls /rdd2022/india/results/kmeans_validation/metrics
-hdfs dfs -ls /rdd2022/india/results/kmeans_validation/clustered_images
-hdfs dfs -ls /rdd2022/india/results/kmeans_validation/cluster_summary
 ```
 
 ### Step 7 — Export KMeans outputs for local visualisation
 
-For the latest run, we exported the HDFS text/CSV outputs into a separate `results/current_run/` directory. This keeps the current-run artifacts separate from the existing `results/final_analysis/` files.
-
-```bash
-mkdir -p results/current_run
-
-hdfs dfs -getmerge \\
-  /rdd2022/india/results/kmeans_validation/metrics \\
-  results/current_run/kmeans_metrics.csv
-
-hdfs dfs -getmerge \\
-  /rdd2022/india/results/kmeans_validation/cluster_summary \\
-  results/current_run/cluster_summary.csv
-
-hdfs dfs -getmerge \\
-  /rdd2022/india/results/fpgrowth_all_damaged/association_rules_csv \\
-  results/current_run/association_rules.csv
-```
-
-`hdfs dfs -getmerge` is appropriate for compatible text outputs such as CSV part files. Do not use it to combine Parquet directories into CSV; Parquet must be read with Spark or another Parquet-aware reader.
-
-The existing `scripts/stage3c_visualize.py` historically reads CSV files from `results/final_analysis/`, not the `results/current_run/` paths above. The new current-run plots were therefore generated directly from the current-run CSVs, without overwriting older final-analysis plots.
-
-Expected input files include:
+`stage3c_visualize.py` reads its inputs from `results/final_analysis/`:
 
 ```text
 results/final_analysis/kmeans_metrics_k2_k15.csv
 results/final_analysis/cluster_summary_k2_k15.csv
 ```
 
-Create the directory if necessary:
+Export the HDFS CSV outputs to those files:
 
 ```bash
 mkdir -p results/final_analysis
+
+hdfs dfs -getmerge \
+  /rdd2022/india/results/kmeans_validation/metrics \
+  results/final_analysis/kmeans_metrics_k2_k15.csv
+
+hdfs dfs -getmerge \
+  /rdd2022/india/results/kmeans_validation/cluster_summary \
+  results/final_analysis/cluster_summary_k2_k15.csv
 ```
 
-Use Spark or an appropriate export procedure to convert the HDFS outputs into CSV files. Do not rename Parquet data to `.csv`: Parquet is a binary columnar format. The local final-analysis files should correspond to the same run as the HDFS outputs being documented.
+`getmerge` works for CSV part files only. Parquet outputs must be read with Spark or another Parquet-aware reader.
 
 ### Step 8 — Generate KMeans visualisations
 
-Once the required CSV files are present:
-
 ```bash
-python3 -m py_compile scripts/stage3c_visualize.py
 python3 scripts/stage3c_visualize.py
 ```
 
-The script uses pandas and matplotlib and writes plots under `results/final_analysis/`, including:
+Outputs in `results/final_analysis/`:
 
 - `silhouette_scores_k2_k15.png`
 - `kmeans_wcss_elbow_k2_k15.png`
 - `cluster_sizes_k15.png`
 - `cluster_feature_heatmap_k15.png`
 
-### Current-run plots (separate from the original final-analysis plots)
-
-After exporting the current-run metrics and cluster summary, these commands generate three plots in `results/current_run/`:
-
-```bash
-python - <<'PY'
-import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-
-out = Path("results/current_run")
-out.mkdir(parents=True, exist_ok=True)
-metrics = pd.read_csv(out / "kmeans_metrics.csv")
-summary = pd.read_csv(out / "cluster_summary.csv")
-
-plt.figure(figsize=(8, 5))
-plt.plot(metrics["k"], metrics["silhouette"], marker="o")
-plt.xlabel("Number of clusters (K)")
-plt.ylabel("Silhouette score")
-plt.title("K-Means Model Selection: Silhouette Score")
-plt.xticks(metrics["k"])
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.savefig(out / "silhouette_vs_k.png", dpi=200)
-plt.close()
-
-plt.figure(figsize=(8, 5))
-plt.plot(metrics["k"], metrics["wcss"], marker="o")
-plt.xlabel("Number of clusters (K)")
-plt.ylabel("WCSS")
-plt.title("K-Means Elbow Analysis")
-plt.xticks(metrics["k"])
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.savefig(out / "wcss_vs_k.png", dpi=200)
-plt.close()
-
-plt.figure(figsize=(10, 5))
-plt.bar(summary["prediction"].astype(str), summary["image_count"])
-plt.xlabel("Cluster ID")
-plt.ylabel("Number of images")
-plt.title("Image Distribution Across K-Means Clusters")
-plt.tight_layout()
-plt.savefig(out / "cluster_sizes.png", dpi=200)
-plt.close()
-
-print("Metrics rows:", len(metrics))
-print("Best silhouette row:")
-print(metrics.loc[metrics["silhouette"].idxmax()].to_string())
-print("Cluster summary rows:", len(summary))
-print("Images represented:", summary["image_count"].sum())
-PY
-```
-
-Open the output folder from WSL using Windows Explorer:
-
-```bash
-explorer.exe "$(wslpath -w "$PWD/results/current_run")"
-```
-
-The plot files are `silhouette_vs_k.png`, `wcss_vs_k.png`, and `cluster_sizes.png`.
-
 ### Step 9 — Run FP-Growth
 
 ```bash
-python3 -m py_compile scripts/stage3b_fpgrowth.py
 spark-submit scripts/stage3b_fpgrowth.py
 ```
 
-The script creates one transaction per image with `total_instances > 0`. Transactions include the damage classes present in each image: D00, D10, D20, and D40. The reported transaction population is 3,223 images.
+The script creates one transaction per image with `total_instances > 0`, containing the damage classes present in that image (D00, D10, D20, D40). The transaction population is 3,223 images.
 
-The configured thresholds are:
+Configured thresholds:
 
 - Minimum support: `0.05`
 - Minimum confidence: `0.20`
 
-The script writes frequent itemsets, association rules, and a CSV-readable rule export under:
+Outputs:
 
 ```text
 /rdd2022/india/results/fpgrowth_all_damaged/frequent_itemsets
@@ -525,97 +357,85 @@ The script writes frequent itemsets, association rules, and a CSV-readable rule 
 /rdd2022/india/results/fpgrowth_all_damaged/association_rules_csv
 ```
 
-Inspect the CSV export with:
-
 ```bash
 hdfs dfs -ls /rdd2022/india/results/fpgrowth_all_damaged/association_rules_csv
 hdfs dfs -cat /rdd2022/india/results/fpgrowth_all_damaged/association_rules_csv/part-*.csv
 ```
 
-Spark's CSV data source cannot directly write array-valued columns. The script converts `antecedent` and `consequent` to strings for its CSV export while retaining the array columns in Parquet. The script uses overwrite mode for these output directories, so preserve any previous run that you need before rerunning it.
+Spark's CSV writer cannot handle array columns, so `antecedent` and `consequent` are converted to strings for the CSV export; the Parquet output keeps them as arrays. The script writes in overwrite mode.
 
 ### Step 10 — Select representative images
 
-First ensure that the KMeans cluster assignments exist in HDFS and that `IMAGE_DIR` and the output directory are correctly configured in `scripts/stage3d_representatives.py`.
-
 ```bash
-python3 -m py_compile scripts/stage3d_representatives.py
 python3 scripts/stage3d_representatives.py
 ```
 
-The script selects up to two candidates per cluster by descending `severity_score` and checks whether the corresponding local image files exist. The reported run checked 30 candidates and found all 30 image files.
+Selects up to two candidates per cluster by descending `severity_score` and checks that each image file exists locally (30 candidates checked, all 30 found).
 
-Expected output:
-
-```text
-results/final_analysis/representative_images_k15.csv
-```
+Output: `results/final_analysis/representative_images_k15.csv`
 
 ### Step 11 — Generate annotated representative-image grids
 
-Configure the image and XML directories in `scripts/stage3e_cluster_image_grid.py`, and make sure the representative-image CSV exists.
-
 ```bash
-python3 -m py_compile scripts/stage3e_cluster_image_grid.py
 python3 scripts/stage3e_cluster_image_grid.py
 ```
 
-Expected grid files:
+Outputs:
 
 ```text
-results/final_analysis/k15_representative_boxes_part1.png
-results/final_analysis/k15_representative_boxes_part2.png
-results/final_analysis/k15_representative_boxes_part3.png
+results/final_analysis/k15_representative_boxes_part1.png   # clusters 0–4
+results/final_analysis/k15_representative_boxes_part2.png   # clusters 5–9
+results/final_analysis/k15_representative_boxes_part3.png   # clusters 10–14
 ```
 
-The three grids cover clusters 0–4, 5–9, and 10–14, respectively. The script also writes an annotation audit CSV and individual annotated image files. These figures use original XML ground-truth bounding boxes, not predictions from a trained detector.
+The script also writes an annotation audit CSV and individual annotated images. All boxes are original XML ground-truth annotations, not detector predictions.
 
-### Step 12 — Check generated local artifacts
+### Step 12 — Check generated artifacts
 
 ```bash
 ls -lh results/final_analysis/
 ```
 
-Confirm that the required CSV and PNG files exist before referencing them in a report. A successful `py_compile` checks Python syntax only; it does not guarantee that the Spark job will run or that its input schema and paths are correct.
-
-## 7. KMeans methodology and reported results
+## 7. KMeans methodology and results
 
 ### Method
 
 1. Read image-level features from the HDFS Parquet dataset.
 2. Filter to images with `total_instances > 0`.
-3. Select the nine features listed in Section 6.
+3. Select the nine features listed in Step 6.
 4. Drop rows with missing selected features or required fields.
-5. Assemble and standardise the feature vector using Spark ML's `VectorAssembler` and `StandardScaler` (`withMean=True`, `withStd=True`).
-6. Evaluate K from 2 through 15.
+5. Assemble and standardise the feature vector with Spark ML's `VectorAssembler` and `StandardScaler` (`withMean=True`, `withStd=True`).
+6. Evaluate K=2–15.
 7. Record silhouette score and WCSS (`trainingCost`) for each K.
-8. Use the K=15 assignments for the current cluster summary and representative-image analysis.
+8. Use the K=15 assignments for the cluster summary and representative-image analysis.
 
-### Best score within the tested range
+### Results
 
-| Metric | Reported result |
+| Metric | Result |
 |---|---:|
-| K used for the current visual analysis | 15 |
+| K used for visual analysis | 15 |
 | Silhouette score at K=15 | 0.5336528 |
 | WCSS at K=15 | 6366.7276 |
 | Evaluated range | K=2–15 |
 
-K=15 had the highest silhouette score among the tested values in the reported run. This makes it the best-scoring candidate **within the tested range**, not proof that 15 clusters is universally optimal. Cluster-size balance and interpretability should also be considered.
+K=15 had the highest silhouette score among the tested values, which makes it the best-scoring candidate within K=2–15 and not necessarily the optimal number of clusters.
 
 ### Interpretation and limitations
 
-- The silhouette score evaluates separation and cohesion under the chosen features and distance measure.
-- WCSS generally decreases as K increases, so it should be considered with the elbow plot and other evidence rather than in isolation.
-- Cluster sizes are uneven, including small clusters. These may reflect uncommon feature patterns or outliers and should not automatically be described as distinct real-world road-severity categories.
-- The cluster-feature heatmap shows standardised feature profiles. Values are relative to the scaling used for clustering.
-- KMeans is unsupervised. Cluster IDs are arbitrary labels, not ordered severity classes.
-- `severity_score` is a project-defined score derived from annotation features. Unless independently validated, it should not be described as a validated engineering or operational road-severity measure.
+- Silhouette score measures separation and cohesion under the chosen features and distance measure.
+- WCSS decreases as K increases, so it is read alongside the elbow plot.
+- Cluster sizes are uneven, and small clusters may reflect rare feature patterns or outliers rather than distinct real-world severity categories.
+- The cluster-feature heatmap shows standardised profiles, relative to the scaling used for clustering.
+- KMeans is unsupervised; cluster IDs are arbitrary labels, not ordered severity classes.
+- `severity_score` is a project-defined score derived from annotation features and has not been independently validated as a road-severity measure.
 
 ## 8. Representative-image analysis
 
-The current visual analysis uses K=15, selecting two high-`severity_score` candidates within each cluster. The reported run verified 30 image files, with no missing files.
+The visual analysis uses K=15 and selects two high-`severity_score` candidates per cluster (30 images, all found locally). The grids group clusters 0–4, 5–9, and 10–14. Because candidates are chosen by `severity_score`, they are not necessarily the images closest to a cluster centroid.
 
-Relevant artifacts include:
+Bounding boxes and damage labels come from the original XML annotations. They are ground truth, not KMeans or detector predictions.
+
+Artifacts:
 
 ```text
 results/final_analysis/representative_images_k15.csv
@@ -625,19 +445,17 @@ results/final_analysis/k15_representative_boxes_part2.png
 results/final_analysis/k15_representative_boxes_part3.png
 ```
 
-The grids group clusters 0–4, 5–9, and 10–14. These examples help inspect images assigned to each cluster. Since candidates are selected by `severity_score`, they are not necessarily the points closest to a cluster centroid.
+The CSV and audit file record local image paths, so they need to be regenerated after changing the dataset location.
 
-The bounding boxes and damage labels are read from the original XML annotations. They are ground-truth annotations, not KMeans predictions or object-detection predictions. The representative-image CSV and audit may contain local file paths; regenerate them after changing the dataset location.
-
-## 9. FP-Growth methodology and reported results
+## 9. FP-Growth methodology and results
 
 ### Transaction construction
 
-Each damage-bearing image becomes one transaction. The transaction contains the damage-class labels present in that image, drawn from D00, D10, D20, and D40. Images without annotated damage instances are excluded.
+Each damage-bearing image is one transaction containing the damage classes present in it (D00, D10, D20, D40). Images without annotated damage are excluded.
 
-### Reported configuration and outputs
+### Configuration and outputs
 
-| Setting / measure | Reported value |
+| Setting / measure | Value |
 |---|---:|
 | Transaction population | 3,223 damage-bearing images |
 | Minimum support | 0.05 |
@@ -645,11 +463,11 @@ Each damage-bearing image becomes one transaction. The transaction contains the 
 | Frequent itemsets saved | 7 |
 | Association rules saved | 9 |
 
-The initial confidence threshold of 0.50 produced no rules in the revised all-damaged-image run, so it was reduced to 0.20 to inspect more candidate rules. These are analysis settings, not claims of statistical significance.
+A minimum confidence of 0.50 produced no rules, so it was lowered to 0.20.
 
 ### Frequent itemsets
 
-| Itemset | Reported frequency |
+| Itemset | Frequency |
 |---|---:|
 | D20 | 1,758 |
 | D40 | 1,530 |
@@ -659,35 +477,27 @@ The initial confidence threshold of 0.50 produced no rules in the revised all-da
 | D00, D40 | 363 |
 | D00, D40, D20 | 168 |
 
-### Association-rule interpretation
+### Association rules
 
-The reported nine generated rules all had lift below 1. For example, `{D00, D40} → {D20}` had support of approximately 0.0521, confidence of approximately 0.4628, and lift of approximately 0.8485.
-
-A lift below 1 indicates that the observed co-occurrence is lower than the independence baseline for the antecedent and consequent in this dataset. These rules should therefore not be presented as positive associations stronger than independence. Association rules describe co-occurrence and do not establish causation.
-
-These values are the previously reported results. Re-run the stage and inspect the generated outputs before claiming that a fresh execution reproduces them exactly.
+All nine rules have lift below 1. For example, `{D00, D40} → {D20}` has support ≈ 0.0521, confidence ≈ 0.4628, and lift ≈ 0.8485. A lift below 1 means the antecedent and consequent co-occur less often than expected under independence, so these are not positive associations. Rules describe co-occurrence, not causation.
 
 ## 10. Output inventory
 
-### Local outputs
-
-Commit selected final artifacts that are useful for reviewing the analysis without rerunning Spark:
+### Local outputs (`results/final_analysis/`)
 
 | Output | Description |
 |---|---|
-| `kmeans_metrics_final_k2_k15.csv` | Consolidated KMeans evaluation metrics |
-| `cluster_summary_final_k15.csv` | Consolidated K=15 cluster summary |
+| `kmeans_metrics_final_k2_k15.csv` | KMeans evaluation metrics |
+| `cluster_summary_final_k15.csv` | K=15 cluster summary |
 | `silhouette_scores_k2_k15.png` | Silhouette comparison for K=2–15 |
 | `kmeans_wcss_elbow_k2_k15.png` | WCSS curve for K=2–15 |
 | `cluster_sizes_k15.png` | Image counts by cluster |
 | `cluster_feature_heatmap_k15.png` | Standardised feature profiles by cluster |
 | `representative_images_k15.csv` | Selected representative candidates |
 | `representative_bbox_audit_k15.csv` | Audit of annotation-box processing |
-| `k15_representative_boxes_part1.png` | Annotated representative images for clusters 0–4 |
-| `k15_representative_boxes_part2.png` | Annotated representative images for clusters 5–9 |
-| `k15_representative_boxes_part3.png` | Annotated representative images for clusters 10–14 |
-
-Keep this inventory aligned with the files actually committed. Older K=8, K=12, or duplicate plots may be retained only if they are discussed in the report or needed to document an experiment comparison.
+| `k15_representative_boxes_part1.png` | Annotated representatives, clusters 0–4 |
+| `k15_representative_boxes_part2.png` | Annotated representatives, clusters 5–9 |
+| `k15_representative_boxes_part3.png` | Annotated representatives, clusters 10–14 |
 
 ### Generated HDFS outputs
 
@@ -701,104 +511,35 @@ Keep this inventory aligned with the files actually committed. Older K=8, K=12, 
 | `/rdd2022/india/results/fpgrowth_all_damaged/association_rules` | FP-Growth association rules |
 | `/rdd2022/india/results/fpgrowth_all_damaged/association_rules_csv` | CSV-readable association rules |
 
-These are generated outputs, not files supplied automatically by Git. Recreate them by running the corresponding stages.
-
 ## 11. Troubleshooting
 
-### HDFS is unavailable
-
-```bash
-jps
-hdfs dfs -ls /
-```
-
-If required Hadoop services are not running, start HDFS using the configured installation:
-
-```bash
-start-dfs.sh
-```
-
-If startup fails, inspect the Hadoop configuration and logs.
-
-### XML annotation input is missing
-
-```bash
-hdfs dfs -ls /rdd2022/india/annotations
-```
-
-Upload the XML files as described in Step 3. Confirm that the input path matches `XML_PATH` in `scripts/rdd2022_person1.py`.
-
-### Feature Parquet is missing
-
-```bash
-hdfs dfs -ls /rdd2022/india/features
-```
-
-Run feature extraction after checking that the XML input is available and that the script's HDFS paths are correct.
-
-### Spark script fails
-
-Check syntax:
-
-```bash
-python3 -m py_compile scripts/rdd2022_person1.py
-python3 -m py_compile scripts/stage3a_kmeans.py
-python3 -m py_compile scripts/stage3b_fpgrowth.py
-```
-
-Syntax checks do not validate HDFS connectivity, schemas, dependencies, or successful execution.
-
-### CSV export fails on array columns
-
-Spark's CSV data source does not directly support array-valued columns. The FP-Growth script converts `antecedent` and `consequent` to strings for its CSV export. Parquet can retain the array columns.
-
-### Visualisation script cannot find CSV inputs
-
-```bash
-ls -lh results/final_analysis/
-```
-
-Export the corresponding HDFS metrics and summary outputs to CSV if required files are missing. Do not rename Parquet data to CSV.
-
-### Representative images or XML annotations are missing
-
-Verify that `IMAGE_DIR` and `XML_DIR` in the representative-image scripts point to the correct local dataset directories. Confirm that each image has a matching XML annotation filename and regenerate the representative-image CSV after changing the dataset location.
-
-## Latest execution recorded in this README
-
-The recent execution was run in WSL from `~/projects/RDD2022_BigData_Project` using the Python virtual environment `.venv`. The source dataset was the full RDD2022 release archive, from which the India archive and training XML annotations were extracted. XML files were uploaded to HDFS and the feature-extraction, feature-validation, KMeans, and FP-Growth stages were run.
-
-Confirmed output details from that execution:
-
-- The feature Parquet directory `/rdd2022/india/features/india_features.parquet` contained `_SUCCESS` and two Parquet part files.
-- KMeans validation completed successfully for K=2 through K=15.
-- `results/current_run/kmeans_metrics.csv` contained 14 data rows, one for each tested K.
-- `results/current_run/cluster_summary.csv` contained 15 cluster rows.
-- The cluster summary represented 3,223 damage-bearing images.
-- The highest observed silhouette score was approximately `0.533653` at K=15; WCSS at K=15 was approximately `6366.727556`.
-- FP-Growth output directories for frequent itemsets, association rules, and a CSV export were created in HDFS.
-- The current-run plots were generated from the exported metrics and summary CSVs.
-
-**Dataset coverage caution:** 3,223 is the number of damage-bearing images represented in the cluster summary, not the number of all XML files or all images in the original release. Verify the final HDFS annotation file count and feature-data row counts before claiming that the full India dataset was processed. An intermediate HDFS count during upload showed 502 files, but the upload was still in progress at that point; it must not be treated as the final count.
+| Problem | Check |
+|---|---|
+| HDFS unavailable | `jps`, `hdfs dfs -ls /`, then `start-dfs.sh` |
+| XML input missing | `hdfs dfs -ls /rdd2022/india/annotations`; confirm the path matches `XML_PATH` in `rdd2022_person1.py` |
+| Feature Parquet missing | `hdfs dfs -ls /rdd2022/india/features`; rerun Step 4 |
+| Spark script fails | `python3 -m py_compile scripts/<script>.py` for syntax; then check HDFS paths and schema |
+| CSV export fails on array columns | Spark's CSV writer does not support arrays; the FP-Growth script stringifies them, and Parquet keeps them as arrays |
+| Visualisation script can't find CSVs | `ls -lh results/final_analysis/`; export the HDFS outputs as in Step 7 |
+| Images or XMLs not found | Check `IMAGE_DIR` and `XML_DIR` in the representative-image scripts and regenerate the representative CSV |
 
 ## 12. Reproducibility notes and limitations
 
-- **Dataset availability:** Raw images and XML annotations are not included in the repository. Reproduction requires access to the same dataset version.
-- **Local paths:** The representative-image scripts currently contain paths from the original WSL development environment. Update these before running on another machine.
-- **HDFS state:** HDFS input and output directories must be created or generated as described in the workflow.
-- **Generated artifacts:** Intermediate Parquet directories and local runtime files are excluded from Git. They must be regenerated when needed.
-- **Output overwrite:** Some scripts use overwrite mode for their configured outputs. Preserve previous results before rerunning if they are needed for comparison.
-- **Runtime determinism:** KMeans uses a fixed random seed, but library versions, input rows, and preprocessing changes can affect results.
-- **Feature design:** Clustering results depend on the selected counts, area ratios, class-count features, and preprocessing.
-- **Severity score:** `severity_score` is a project-defined annotation-derived score and is not independently validated.
-- **Clustering:** Clusters are exploratory groups; cluster IDs are not ordered labels and do not establish causal or semantic categories by themselves.
-- **FP-Growth:** Support and confidence settings affect the itemsets and rules returned. Rules describe association, not causation.
-- **Bounding boxes:** Representative-image grids display original XML ground-truth annotations; they are not predictions from a trained detection model.
-- **Local plots:** Plot generation depends on CSV exports being consistent with the HDFS run being documented.
-- **Reported results:** Counts and metrics in this README are from the reported project run. Re-run the pipeline and compare generated files before claiming exact reproduction.
+- **Dataset availability:** Raw images and XML annotations are not in the repository.
+- **Local paths:** The representative-image scripts contain paths from the original WSL machine.
+- **HDFS state:** Input and output directories must be created or generated as described above.
+- **Generated artifacts:** Intermediate Parquet directories and local runtime files are excluded from Git.
+- **Output overwrite:** Some scripts overwrite their output directories, so keep a copy of any earlier results you need.
+- **Determinism:** KMeans uses a fixed random seed, but library versions, input rows, and preprocessing changes can alter results.
+- **Feature design:** Clustering results depend on the chosen counts, area ratios, class-count features, and preprocessing.
+- **Severity score:** `severity_score` is project-defined and not independently validated.
+- **Clustering:** Clusters are exploratory; IDs are not ordered labels.
+- **FP-Growth:** Results depend on the support and confidence thresholds, and rules do not imply causation.
+- **Bounding boxes:** Grids show original XML ground-truth annotations, not detector predictions.
+- **Coverage:** 3,223 is the number of damage-bearing images in the cluster summary, not the total number of XML files in the release.
 
 ## 13. Conclusion
 
-This project demonstrates a big-data workflow for converting road-damage XML annotations into image-level features, processing them with Spark, evaluating KMeans clustering, exploring damage-class co-occurrence with FP-Growth, and generating visual inspection artifacts.
+This project converts road-damage XML annotations into image-level features, processes them with Spark, evaluates KMeans clustering, explores damage-class co-occurrence with FP-Growth, and produces visual inspection artifacts.
 
-In the reported run, K=15 achieved the highest silhouette score among K=2–15, although cluster sizes were uneven and the result remains exploratory. FP-Growth produced seven frequent itemsets and nine rules at the revised thresholds; all reported rule lifts were below 1. The representative-image grids provide visual context using original XML annotations rather than predictions from a trained detection model.
+K=15 achieved the highest silhouette score among K=2–15, although cluster sizes were uneven and the result remains exploratory. FP-Growth produced seven frequent itemsets and nine rules at the chosen thresholds, all with lift below 1. The representative-image grids provide visual context using original XML annotations rather than predictions from a trained detector.
