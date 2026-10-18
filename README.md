@@ -1,4 +1,4 @@
-# RDD2022 India Road Damage Analysis — Reproducible Big Data Project
+# RDD2022 India Road Damage Analysis 
 
 ## 1. Project overview
 
@@ -24,9 +24,9 @@ The following versions were recorded for the development environment. Confirm th
 |---|---|---|
 | Operating system | Ubuntu under WSL on Windows | Development environment |
 | Hadoop | 3.3.6 | HDFS storage |
-| Apache Spark / PySpark | 4.2.0 | Distributed ETL, KMeans, and FP-Growth |
-| Java | OpenJDK 17.0.20.1 | JVM runtime |
-| Python | 3.13.5 | PySpark scripts and local analysis |
+| Apache Spark / PySpark | 3.5.9 | Distributed ETL, KMeans, and FP-Growth |
+| Java | OpenJDK 17 (WSL setup used for the recent run) | JVM runtime |
+| Python | 3.10.12 | PySpark scripts and local analysis |
 | pandas | Used by local analysis scripts | CSV handling |
 | matplotlib | Used by local analysis scripts | Plots and grids |
 | Pillow | Used by representative-image script | Image loading and annotation |
@@ -47,18 +47,36 @@ jps
 
 When HDFS is running, `jps` should normally show the NameNode and DataNode processes; a SecondaryNameNode may also appear depending on the configuration.
 
-### Python dependencies
+### Python virtual environment and dependencies
 
-The local plotting and image scripts require `pandas`, `matplotlib`, and `Pillow`. Install them in a virtual environment if needed:
+The recent WSL setup used Python 3.10.12 and a project-local virtual environment named `.venv`. From the repository root:
 
 ```bash
+cd ~/projects/RDD2022_BigData_Project
+
 python3 -m venv .venv
 source .venv/bin/activate
+
 python -m pip install --upgrade pip
-python -m pip install pandas matplotlib Pillow
+python -m pip install -r requirements.txt
+python -m pip check
+python -m compileall -q scripts
 ```
 
-The Spark scripts also require a working Spark/PySpark installation compatible with the configured Java and Hadoop environment. The commands above do not install or configure Hadoop or Spark.
+The recorded checks completed successfully. `pip check` verifies installed package requirements, while `compileall` checks Python syntax; neither one proves that every Spark job will run successfully.
+
+If `requirements.txt` does not include a package imported by a local plotting/image script, add that dependency to the requirements file rather than relying on an undeclared local installation. The project also needs separately installed and configured Hadoop and Spark; creating `.venv` does not install them.
+
+For the recent WSL environment, Java was available at `/usr/lib/jvm/java-17-openjdk-amd64`. Use the path that exists on your machine:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+spark-submit --version
+```
+
+The recent environment used Hadoop 3.3.6, Spark 3.5.9, Java 17, and Python 3.10.12. These are the versions to use as the reproduction baseline for this run, rather than the older versions previously listed in this README.
 
 ## 3. Dataset setup
 
@@ -76,6 +94,50 @@ RDD2022_India/
 ```
 
 These are example directory names, not paths that will automatically exist on another computer. Keep the image files and their corresponding XML files together in the expected structure.
+
+### Download and extract the released dataset
+
+The archive used in the recent WSL run was the full RDD2022 release archive:
+
+```text
+RDD2022_released_through_CRDDC2022.zip
+```
+
+It was downloaded from the RDD2022 release hosted on Figshare. The full archive is large (approximately 12.35 GB before extraction). Keep it outside the Git repository; do not commit the archive or the extracted image dataset.
+
+The downloaded archive was stored under `~/datasets`. After downloading it, the India country archive was extracted from the outer archive:
+
+```bash
+mkdir -p ~/datasets
+cd ~/datasets
+
+# Check that the India archive is present inside the full release.
+unzip -Z1 RDD2022_released_through_CRDDC2022.zip | grep 'RDD2022/India.zip'
+
+# Extract only the nested India archive.
+unzip -o RDD2022_released_through_CRDDC2022.zip \\
+  'RDD2022/India.zip' -d ~/datasets
+```
+
+The nested archive contains training images and XML annotations, including paths such as `India/train/annotations/xmls/India_000000.xml`. In the recent run, only the training XML annotations were extracted for the HDFS feature-extraction stage:
+
+```bash
+unzip -Z1 ~/datasets/RDD2022/India.zip | grep -m 10 -E '\\.xml$'
+
+mkdir -p ~/datasets/India_annotations
+unzip -o ~/datasets/RDD2022/India.zip \\
+  'India/train/annotations/xmls/*.xml' \\
+  -d ~/datasets/India_annotations
+```
+
+Count local XML files before uploading them:
+
+```bash
+find ~/datasets/India_annotations/India/train/annotations/xmls \\
+  -maxdepth 1 -type f -name '*.xml' | wc -l
+```
+
+The exact source and extraction paths may differ if you choose another download location. This extraction step does **not** extract the corresponding JPEG images. The representative-image stages need those images locally, so extract the image directory as well if you intend to regenerate representative-image grids.
 
 ### Configure local paths before running
 
@@ -227,8 +289,21 @@ The current `scripts/rdd2022_person1.py` expects XML files directly under `/rdd2
 Upload the XML files from your local annotation directory. Replace the local placeholder with the actual path on your machine:
 
 ```bash
-hdfs dfs -put /path/to/RDD2022_India/India/train/annotations/xmls/*.xml /rdd2022/india/annotations/
+hdfs dfs -put \\
+  ~/datasets/India_annotations/India/train/annotations/xmls/*.xml \\
+  /rdd2022/india/annotations/
 ```
+
+For this project, the feature extraction script reads the XML files directly from `/rdd2022/india/annotations/*.xml`; the XML files should be directly inside that HDFS directory, not nested several directories deep.
+
+Count the HDFS files and inspect the destination after upload:
+
+```bash
+hdfs dfs -count /rdd2022/india/annotations
+hdfs dfs -ls /rdd2022/india/annotations | head
+```
+
+During the recent upload, an intermediate count showed 502 files while the upload was still in progress. That was only a snapshot, not the final dataset count. Always verify the count after the upload has finished.
 
 If the HDFS destination already contains files with the same names, `hdfs dfs -put` may fail rather than overwrite them. Inspect the destination first and deliberately remove or replace old input files only if appropriate.
 
@@ -313,7 +388,27 @@ hdfs dfs -ls /rdd2022/india/results/kmeans_validation/cluster_summary
 
 ### Step 7 — Export KMeans outputs for local visualisation
 
-The local visualization script reads CSV files from `results/final_analysis/`. The KMeans stage writes output to HDFS, so the required HDFS outputs must be exported to local CSV files before plotting.
+For the latest run, we exported the HDFS text/CSV outputs into a separate `results/current_run/` directory. This keeps the current-run artifacts separate from the existing `results/final_analysis/` files.
+
+```bash
+mkdir -p results/current_run
+
+hdfs dfs -getmerge \\
+  /rdd2022/india/results/kmeans_validation/metrics \\
+  results/current_run/kmeans_metrics.csv
+
+hdfs dfs -getmerge \\
+  /rdd2022/india/results/kmeans_validation/cluster_summary \\
+  results/current_run/cluster_summary.csv
+
+hdfs dfs -getmerge \\
+  /rdd2022/india/results/fpgrowth_all_damaged/association_rules_csv \\
+  results/current_run/association_rules.csv
+```
+
+`hdfs dfs -getmerge` is appropriate for compatible text outputs such as CSV part files. Do not use it to combine Parquet directories into CSV; Parquet must be read with Spark or another Parquet-aware reader.
+
+The existing `scripts/stage3c_visualize.py` historically reads CSV files from `results/final_analysis/`, not the `results/current_run/` paths above. The new current-run plots were therefore generated directly from the current-run CSVs, without overwriting older final-analysis plots.
 
 Expected input files include:
 
@@ -345,6 +440,68 @@ The script uses pandas and matplotlib and writes plots under `results/final_anal
 - `kmeans_wcss_elbow_k2_k15.png`
 - `cluster_sizes_k15.png`
 - `cluster_feature_heatmap_k15.png`
+
+### Current-run plots (separate from the original final-analysis plots)
+
+After exporting the current-run metrics and cluster summary, these commands generate three plots in `results/current_run/`:
+
+```bash
+python - <<'PY'
+import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+out = Path("results/current_run")
+out.mkdir(parents=True, exist_ok=True)
+metrics = pd.read_csv(out / "kmeans_metrics.csv")
+summary = pd.read_csv(out / "cluster_summary.csv")
+
+plt.figure(figsize=(8, 5))
+plt.plot(metrics["k"], metrics["silhouette"], marker="o")
+plt.xlabel("Number of clusters (K)")
+plt.ylabel("Silhouette score")
+plt.title("K-Means Model Selection: Silhouette Score")
+plt.xticks(metrics["k"])
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig(out / "silhouette_vs_k.png", dpi=200)
+plt.close()
+
+plt.figure(figsize=(8, 5))
+plt.plot(metrics["k"], metrics["wcss"], marker="o")
+plt.xlabel("Number of clusters (K)")
+plt.ylabel("WCSS")
+plt.title("K-Means Elbow Analysis")
+plt.xticks(metrics["k"])
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig(out / "wcss_vs_k.png", dpi=200)
+plt.close()
+
+plt.figure(figsize=(10, 5))
+plt.bar(summary["prediction"].astype(str), summary["image_count"])
+plt.xlabel("Cluster ID")
+plt.ylabel("Number of images")
+plt.title("Image Distribution Across K-Means Clusters")
+plt.tight_layout()
+plt.savefig(out / "cluster_sizes.png", dpi=200)
+plt.close()
+
+print("Metrics rows:", len(metrics))
+print("Best silhouette row:")
+print(metrics.loc[metrics["silhouette"].idxmax()].to_string())
+print("Cluster summary rows:", len(summary))
+print("Images represented:", summary["image_count"].sum())
+PY
+```
+
+Open the output folder from WSL using Windows Explorer:
+
+```bash
+explorer.exe "$(wslpath -w "$PWD/results/current_run")"
+```
+
+The plot files are `silhouette_vs_k.png`, `wcss_vs_k.png`, and `cluster_sizes.png`.
 
 ### Step 9 — Run FP-Growth
 
@@ -606,6 +763,23 @@ Export the corresponding HDFS metrics and summary outputs to CSV if required fil
 ### Representative images or XML annotations are missing
 
 Verify that `IMAGE_DIR` and `XML_DIR` in the representative-image scripts point to the correct local dataset directories. Confirm that each image has a matching XML annotation filename and regenerate the representative-image CSV after changing the dataset location.
+
+## Latest execution recorded in this README
+
+The recent execution was run in WSL from `~/projects/RDD2022_BigData_Project` using the Python virtual environment `.venv`. The source dataset was the full RDD2022 release archive, from which the India archive and training XML annotations were extracted. XML files were uploaded to HDFS and the feature-extraction, feature-validation, KMeans, and FP-Growth stages were run.
+
+Confirmed output details from that execution:
+
+- The feature Parquet directory `/rdd2022/india/features/india_features.parquet` contained `_SUCCESS` and two Parquet part files.
+- KMeans validation completed successfully for K=2 through K=15.
+- `results/current_run/kmeans_metrics.csv` contained 14 data rows, one for each tested K.
+- `results/current_run/cluster_summary.csv` contained 15 cluster rows.
+- The cluster summary represented 3,223 damage-bearing images.
+- The highest observed silhouette score was approximately `0.533653` at K=15; WCSS at K=15 was approximately `6366.727556`.
+- FP-Growth output directories for frequent itemsets, association rules, and a CSV export were created in HDFS.
+- The current-run plots were generated from the exported metrics and summary CSVs.
+
+**Dataset coverage caution:** 3,223 is the number of damage-bearing images represented in the cluster summary, not the number of all XML files or all images in the original release. Verify the final HDFS annotation file count and feature-data row counts before claiming that the full India dataset was processed. An intermediate HDFS count during upload showed 502 files, but the upload was still in progress at that point; it must not be treated as the final count.
 
 ## 12. Reproducibility notes and limitations
 
