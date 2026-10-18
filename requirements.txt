@@ -1,0 +1,5 @@
+# Python dependencies for local visualisation and representative-image scripts.
+# Hadoop, Java, and Apache Spark/PySpark must be installed and configured separately.
+pandas
+matplotlib
+Pillow

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Local Hive/Derby files
+derby.log
+metastore_db/
+
+# Hadoop local checksum files
+*.crc
+
+# Local datasets
+data/
+datasets/
+RDD2022_India/
+*.zip
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Model/checkpoint files
+*.pt
+*.pth
+*.ckpt
+
+# Temporary files
+*.tmp
+*.bak
